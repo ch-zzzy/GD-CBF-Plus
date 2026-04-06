@@ -1,0 +1,10 @@
+{
+  "configurations": [
+    {
+      "name": "default",
+      "includePath": [],
+      "compileCommandsPath": "${workspaceRoot}\\out\\build\\default\\compile_commands.json",
+      "intelliSenseMode": "windows-msvc-x64"
+    }
+  ]
+}

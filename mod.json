@@ -1,0 +1,94 @@
+{
+	"geode": "5.5.3",
+	"gd": {
+		"win": "2.2081"
+	},
+
+	"id": "chizz.continuous-physics",
+	"name": "Continuous Physics",
+	"version": "v1.0.0",
+	"developer": "chizz",
+	"description": "Reworks physics engine for interpolation.",
+	"tags": [
+        "gameplay",
+        "enhancement",
+        "performance",
+		"cheat"
+    ],
+
+	"settings": {
+		"mod-disabled": {
+			"name": "Disable Mod",
+			"type": "bool",
+			"default": false
+		},
+
+		"input-hz": {
+			"name": "Input Refresh Rate (Hz)",
+			"description": "How frequently the game checks for your input. Higher values = more responsive/precise. Set to 240 for vanilla click-on-steps behavior, 480 for CBS equivalent, max to replicate syzzi's CBF.",
+			"type": "float",
+			"default": 240,
+            "min": 60,
+            "max": 10000,
+			"control": {
+				"slider": false
+			},
+			"enable-if": "!subframes-enabled"
+        },
+
+		"dangerous-settings": {
+			"name": "Dangerous Settings 😬",
+			"description": "These settings change physics from vanilla and are not recommended for general use.",
+			"type": "bool",
+			"default": false
+		},
+
+		"tps": {
+			"name": "Ticks Per Second (TPS)",
+			"description": "How many times per second the physics engine and collision checks update. Set to 240 for vanilla physics.",
+			"type": "float",
+			"default": 240,
+			"min": 30,
+			"max": 1000,
+			"control": {
+				"slider": false
+			},
+			"enable-if": "dangerous-settings",
+			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
+		},
+
+		"velocity-unrounding": {
+			"name": "Velocity Unrounding",
+			"description": "Implementation of Velocity Unrounding, which prevents the game from rounding your velocity to 3 decimal places.",
+			"type": "bool",
+			"default": false,
+			"enable-if": "dangerous-settings",
+			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
+		},
+
+		"subframes-enabled": {
+			"name": "Enable 2.1 Subframes",
+			"description": "Replicates the \"subframe\" physics behavior of Geometry Dash 2.1, where every frame had four ticks. (Disables input hz, sets tps to be quadrupled internally.)",
+			"type": "bool",
+			"default": false,
+			"enable-if": "dangerous-settings",
+			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
+		},
+
+		"physics-debug-counters": {
+			"name": "Physics Debug Counters",
+			"description": "Logs input/reconcile counters periodically and at flush/reset. For debugging only.",
+			"type": "bool",
+			"default": false,
+			"enable-if": "dangerous-settings",
+			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
+		}
+	},
+
+	"incompatibilities": {
+		"syzzi.click_between_frames": ">=v1.0.0",
+		"zmx.cbf-lite": ">=v1.0.0",
+		"alphalaneous.click_after_frames": ">=v1.0.0",
+		"chizz.velocity-unrounding": ">=v1.0.0"
+	}
+}

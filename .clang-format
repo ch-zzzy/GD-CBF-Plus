@@ -1,0 +1,64 @@
+BasedOnStyle: Google
+
+Language: Cpp
+Standard: Latest
+
+UseTab: Always
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+
+ColumnLimit: 80
+
+BreakBeforeBraces: Custom
+BreakAfterFunctionDefinition: true
+BraceWrapping:
+AfterClass: false
+AfterControlStatement: false
+AfterFunction: false
+AfterNamespace: false
+AfterStruct: false
+AfterUnion: false
+BeforeCatch: false
+BeforeElse: false
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: false
+
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+AlignOperands: false
+AlignAfterOpenBracket: DontAlign
+
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+
+- Regex: '^<.*'
+  Priority: 1
+- Regex: '^".*'
+  Priority: 2
+
+NamespaceIndentation: All
+FixNamespaceComments: true
+
+IndentCaseLabels: true
+
+SpaceBeforeParens: ControlStatements
+SpaceBeforeAssignmentOperators: true
+SpaceAfterCStyleCast: true
+
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpaceInEmptyParentheses: false
+
+SpacesBeforeTrailingComments: 1
+
+AccessModifierOffset: 0
+
+ReflowComments: false
+SortUsingDeclarations: true
