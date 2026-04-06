@@ -1,4 +1,4 @@
-# Continuous Physics
+# Continuous Physics (WIP)
 
 ## What does it do?
 This mod completely reworks the discrete tick-by-tick method Geometry Dash uses for physics. Using kinematic formulas, the mod can interpolate the player's position and velocity at any point in time. The main impact of this is to be able to separate ticks per second and input refresh rate. Meaning the physics can update at some independent rate from the input rate allowing for customizable precision.
