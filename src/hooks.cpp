@@ -28,6 +28,9 @@ class $modify(PlayLayer) {
 		bool result = PlayLayer::init(level, useReplay, dontCreateObjects);
 		if (!result) return false;
 
+		g_percentageToggleModEnabled =
+			Loader::get()->isModLoaded("zsa.percentage-toggle");
+
 		this->m_clickBetweenSteps = false;
 		this->m_clickOnSteps = false;
 
@@ -151,14 +154,14 @@ class $modify(PlayerObject) {
 			return;
 		}
 
-		bool earlyReturn = true;
+		bool useVanilla = true;
 		if (this == pl->m_player1) {
-			earlyReturn = onPlayerTick(this, pl, dt, g_p1LastEventTimestamp);
+			useVanilla = onPlayerTick(this, pl, g_p1LastEventTimestamp);
 		} else if (this == pl->m_player2) {
-			earlyReturn = onPlayerTick(this, pl, dt, g_p2LastEventTimestamp);
+			useVanilla = onPlayerTick(this, pl, g_p2LastEventTimestamp);
 		}
 
-		if (earlyReturn) {
+		if (useVanilla) {
 			PlayerObject::update(dt);
 		}
 	}

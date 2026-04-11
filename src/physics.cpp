@@ -1,11 +1,5 @@
 #include "global.hpp"
 
-void checkOrbs(
-	PlayLayer* playLayer, PlayerObject* player, double inputCheckTimestamp);
-void handleInput(PlayerButtonCommand& input, PlayerObject* player,
-	PlayLayer* playLayer, double lastEventTimestamp);
-void handleSpiderInput(PlayerObject* player, double lastEventTimestamp);
-
 #pragma region helpers
 
 void updateDeltaTime() {
@@ -107,210 +101,10 @@ float getGravityAcceleration(PlayerObject* player, float tps) {
 
 #pragma endregion
 
-#pragma region continuous formula
-
-float evalYPosition(PlayerObject* player, double secondsSinceEvent, float tps) {
-	float yPos = player->getPositionY();
-	double yVel = player->m_yVelocity;
-
-	if (player->m_isDart) {
-		return yPos + static_cast<float>(yVel * secondsSinceEvent * 60.0);
-	}
-
-	double gravAccel = getGravityAcceleration(player, tps);
-	return static_cast<float>(yPos + (yVel * secondsSinceEvent) -
-		(0.5 * gravAccel * secondsSinceEvent *
-			(secondsSinceEvent - 1.0 / tps)));
-}
-
-double evalYVelocity(
-	PlayerObject* player, double secondsSinceEvent, float tps) {
-	if (player->m_isDart) return player->m_yVelocity;
-
-	float gravAccel = getGravityAcceleration(player, tps);
-	return player->m_yVelocity - (gravAccel * secondsSinceEvent);
-}
-
-float evalXPosition(PlayerObject* player, double secondsSinceEvent) {
-	float xPos = player->getPositionX();
-	double xSpeed =
-		static_cast<double>(player->m_playerSpeed) * player->m_speedMultiplier;
-	double dir = player->m_isGoingLeft ? -1.0 : 1.0;
-
-	return static_cast<float>(xPos + (xSpeed * dir * secondsSinceEvent * 60.0));
-}
-
-void processInputsUpToTimestamp(double timestamp, PlayerObject* player,
-	PlayLayer* playLayer, bool isPlayer1) {
-	double inputCheckInterval = 1.0 / g_inputHz;
-	double nextInputCheck =
-		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
-
-	double lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
-
-	while (nextInputCheck < lastEventTimestamp) {
-		g_inputChecksCount++;
-		nextInputCheck += inputCheckInterval;
-	}
-
-	while (nextInputCheck <= timestamp) {
-		while (g_inputIdx < g_inputQueue.size()) {
-			auto& input = g_inputQueue[g_inputIdx];
-
-			bool inputIsP1 = !input.m_isPlayer2;
-			if (inputIsP1 != isPlayer1) {
-				g_inputIdx++;
-				continue;
-			}
-
-			if (input.m_timestamp >= nextInputCheck) break;
-
-			playLayer->handleButton(
-				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
-
-			double inputTimestamp = nextInputCheck;
-			if (playLayer->buttonIsRelevant(input)) {
-				inputTimestamp = input.m_timestamp;
-			}
-
-			if (!input.m_isPush && player->m_isDashing) {
-				advancePlayerToTimestamp(
-					player, inputTimestamp, lastEventTimestamp);
-
-				player->stopDashing();
-
-				lastEventTimestamp = inputTimestamp;
-				g_inputIdx++;
-				continue;
-			}
-
-			if (player->m_isSpider) {
-				if (input.m_isPush) {
-					handleSpiderInput(player, lastEventTimestamp);
-				}
-			} else {
-				input.m_timestamp = inputTimestamp;
-				handleInput(input, player, playLayer, lastEventTimestamp);
-			}
-
-			g_inputIdx++;
-		}
-
-		checkOrbs(playLayer, player, nextInputCheck);
-
-		g_inputChecksCount++;
-		nextInputCheck += inputCheckInterval;
-	}
-}
-
-void checkOrbs(
-	PlayLayer* playLayer, PlayerObject* player, double inputCheckTimestamp) {
-	bool isPlayer1 = (player == playLayer->m_player1);
-	double lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
-	if (!player->m_jumpBuffered) return;
-
-	CCArray* orbsTouching = player->m_touchingRings;
-	if (!orbsTouching || orbsTouching->count() == 0) return;
-
-	advancePlayerToTimestamp(player, inputCheckTimestamp, lastEventTimestamp);
-
-	auto orb = static_cast<RingObject*>(orbsTouching->objectAtIndex(0));
-	player->ringJump(orb, false);
-
-	lastEventTimestamp = inputCheckTimestamp;
-}
-
-void advancePlayerToTimestamp(
-	PlayerObject* player, double timestamp, double lastEventTimestamp) {
-	if (player->m_isDashing) {
-		lastEventTimestamp = timestamp;
-		return;
-	}
-
-	double secondsSinceLastEvent = timestamp - lastEventTimestamp;
-	if (secondsSinceLastEvent <= 0.0) return;
-
-	double newYVel = evalYVelocity(player, secondsSinceLastEvent, g_tps);
-
-	float newX, newY;
-	if (!player->m_isSideways) {
-		newX = evalXPosition(player, secondsSinceLastEvent);
-		newY = evalYPosition(player, secondsSinceLastEvent, g_tps);
-	} else {
-		newX = evalYPosition(player, secondsSinceLastEvent, g_tps);
-		newY = evalXPosition(player, secondsSinceLastEvent);
-	}
-
-	player->m_yVelocity = newYVel;
-	player->setPosition({newX, newY});
-	lastEventTimestamp = timestamp;
-}
-
-#pragma endregion
-
-#pragma region tick handling
-
-bool onPlayerTick(PlayerObject* player, PlayLayer* playLayer, float dt,
-	double lastEventTimestamp) {
-	if (!player) return false;
-	static_cast<void>(dt);
-
-	if (player->m_isDashing) {
-		return true;
-	}
-
-	double tickTimestamp = g_levelStartTimestamp + g_tickCount * (1.0 / g_tps);
-	bool isPlayer1 = (player == playLayer->m_player1);
-
-	// Process all inputs up to this tick boundary
-	processInputsUpToTimestamp(tickTimestamp, player, playLayer, isPlayer1);
-
-	// Advance our continuous formula to this tick
-	advancePlayerToTimestamp(player, tickTimestamp, lastEventTimestamp);
-
-	if (isPlayer1) {
-		g_tickCount++;
-	}
-
-	return false;
-}
-
-void onPostCollision(PlayerObject* player, PlayLayer* playLayer) {
-	if (!player || !playLayer) return;
-	bool isPlayer1 = (player == playLayer->m_player1);
-	double lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
-
-	lastEventTimestamp =
-		g_levelStartTimestamp + (g_tickCount - 1) * (1.0 / g_tps);
-
-	player->m_yVelocity = quantizeYVelocity(player->m_yVelocity);
-
-	// Buffered cube jump
-	bool isCube = !player->m_isShip && !player->m_isBird && !player->m_isBall &&
-		!player->m_isDart && !player->m_isRobot && !player->m_isSpider &&
-		!player->m_isSwing;
-
-	if (isCube && player->m_jumpBuffered && player->m_isOnGround) {
-		player->m_yVelocity = quantizeYVelocity(
-			player->m_yStart * (player->m_isUpsideDown ? -1.0 : 1.0));
-		player->m_isOnGround = false;
-	}
-
-	if (g_tps != 240.0f) {
-		playLayer->m_gameState.m_currentProgress =
-			static_cast<int>(playLayer->m_gameState.m_levelTime * 240.0);
-	}
-}
-
-#pragma endregion
-
-#pragma region input handlers
+#pragma region input handler
 
 void handleInput(PlayerButtonCommand& input, PlayerObject* player,
-	PlayLayer* playLayer, double lastEventTimestamp) {
+	PlayLayer* playLayer, double& lastEventTimestamp) {
 	advancePlayerToTimestamp(player, input.m_timestamp, lastEventTimestamp);
 
 	int dir = player->m_isUpsideDown ? -1 : 1;
@@ -349,9 +143,9 @@ void handleInput(PlayerButtonCommand& input, PlayerObject* player,
 		}
 
 	} else if (player->m_isSpider) {
-		// Should not reach here — handled separately
+		// Spider
 		if (input.m_isPush) {
-			handleSpiderInput(player, lastEventTimestamp);
+			player->spiderTestJump(false);
 		}
 
 	} else if (player->m_isSwing) {
@@ -375,9 +169,178 @@ void handleInput(PlayerButtonCommand& input, PlayerObject* player,
 	lastEventTimestamp = input.m_timestamp;
 }
 
-void handleSpiderInput(PlayerObject* player, double lastEventTimestamp) {
-	player->spiderTestJump(false);
-	lastEventTimestamp = lastEventTimestamp;
+#pragma endregion
+
+#pragma region continuous formula
+
+float evalYPosition(PlayerObject* player, double secondsSinceEvent, float tps) {
+	float yPos = player->getPositionY();
+	double yVel = player->m_yVelocity;
+	double t = secondsSinceEvent; // cleaned up for readability
+
+	if (player->m_isDart) {
+		return yPos + static_cast<float>(yVel * t * 60.0);
+	}
+
+	double gravAccel = getGravityAcceleration(player, tps);
+	return yPos +
+		static_cast<float>(
+			((yVel * t) - (0.5 * gravAccel * t * (t - 1.0 / tps))) * 54.0);
+}
+
+double evalYVelocity(
+	PlayerObject* player, double secondsSinceEvent, float tps) {
+	if (player->m_isDart) return player->m_yVelocity;
+
+	float gravAccel = getGravityAcceleration(player, tps);
+	return player->m_yVelocity - (gravAccel * secondsSinceEvent);
+}
+
+float evalXPosition(PlayerObject* player, double secondsSinceEvent) {
+	float xPos = player->getPositionX();
+	double xSpeed =
+		static_cast<double>(player->m_playerSpeed) * player->m_speedMultiplier;
+	double dir = player->m_isGoingLeft ? -1.0 : 1.0;
+
+	return static_cast<float>(xPos + (xSpeed * dir * secondsSinceEvent * 60.0));
+}
+
+void processInputsUpToTimestamp(double timestamp, PlayerObject* player,
+	PlayLayer* playLayer, bool isPlayer1) {
+	double inputCheckInterval = 1.0 / g_inputHz;
+	double nextInputCheck =
+		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
+
+	double& lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+
+	while (nextInputCheck < lastEventTimestamp) {
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+
+	while (nextInputCheck <= timestamp) {
+		while (g_inputIdx < g_inputQueue.size()) {
+			auto& input = g_inputQueue[g_inputIdx];
+
+			bool inputIsP1 = !input.m_isPlayer2;
+			if (inputIsP1 != isPlayer1) {
+				g_inputIdx++;
+				continue;
+			}
+
+			if (input.m_timestamp >= nextInputCheck) break;
+
+			playLayer->handleButton(
+				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
+
+			double inputTimestamp = nextInputCheck;
+			if (playLayer->buttonIsRelevant(input)) {
+				inputTimestamp = input.m_timestamp;
+			}
+
+			if (!input.m_isPush && player->m_isDashing) {
+				advancePlayerToTimestamp(
+					player, inputTimestamp, lastEventTimestamp);
+
+				player->stopDashing();
+
+				lastEventTimestamp = inputTimestamp;
+				g_inputIdx++;
+				continue;
+			}
+
+			input.m_timestamp = inputTimestamp;
+			handleInput(input, player, playLayer, lastEventTimestamp);
+
+			g_inputIdx++;
+		}
+
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+}
+
+void advancePlayerToTimestamp(
+	PlayerObject* player, double timestamp, double& lastEventTimestamp) {
+	if (player->m_isDashing) {
+		lastEventTimestamp = timestamp;
+		return;
+	}
+
+	double secondsSinceLastEvent = timestamp - lastEventTimestamp;
+	if (secondsSinceLastEvent <= 0.0) return;
+
+	double newYVel = evalYVelocity(player, secondsSinceLastEvent, g_tps);
+
+	float newX, newY;
+	if (!player->m_isSideways) {
+		newX = evalXPosition(player, secondsSinceLastEvent);
+		newY = evalYPosition(player, secondsSinceLastEvent, g_tps);
+	} else {
+		newX = evalYPosition(player, secondsSinceLastEvent, g_tps);
+		newY = evalXPosition(player, secondsSinceLastEvent);
+	}
+
+	player->m_yVelocity = newYVel;
+	player->setPosition({newX, newY});
+	lastEventTimestamp = timestamp;
+}
+
+#pragma endregion
+
+#pragma region tick handling
+
+bool onPlayerTick(
+	PlayerObject* player, PlayLayer* playLayer, double& lastEventTimestamp) {
+	if (!player) return true;
+
+	if (player->m_isDashing) {
+		return true;
+	}
+
+	double tickTimestamp = g_levelStartTimestamp + g_tickCount * (1.0 / g_tps);
+	bool isPlayer1 = (player == playLayer->m_player1);
+
+	// Process all inputs up to this tick boundary
+	processInputsUpToTimestamp(tickTimestamp, player, playLayer, isPlayer1);
+
+	// Advance our continuous formula to this tick
+	advancePlayerToTimestamp(player, tickTimestamp, lastEventTimestamp);
+
+	if (isPlayer1) {
+		g_tickCount++;
+	}
+
+	return false;
+}
+
+void onPostCollision(PlayerObject* player, PlayLayer* playLayer) {
+	if (!player || !playLayer) return;
+	bool isPlayer1 = (player == playLayer->m_player1);
+	double& lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+
+	lastEventTimestamp =
+		g_levelStartTimestamp + (g_tickCount - 1) * (1.0 / g_tps);
+
+	player->m_yVelocity = quantizeYVelocity(player->m_yVelocity);
+
+	// Buffered cube jump
+	bool isCube = !player->m_isShip && !player->m_isBird && !player->m_isBall &&
+		!player->m_isDart && !player->m_isRobot && !player->m_isSpider &&
+		!player->m_isSwing;
+
+	if (isCube && player->m_jumpBuffered && player->m_isOnGround) {
+		player->m_yVelocity = quantizeYVelocity(
+			player->m_yStart * (player->m_isUpsideDown ? -1.0 : 1.0));
+		player->m_isOnGround = false;
+	}
+
+	if (g_tps != 240.0f && !g_percentageToggleModEnabled) {
+		playLayer->m_gameState.m_currentProgress =
+			static_cast<int>(playLayer->m_gameState.m_levelTime * 240.0);
+	}
 }
 
 #pragma endregion

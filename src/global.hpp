@@ -34,14 +34,16 @@ inline double g_scaledDt = g_rawDt * 0.9;
 inline std::vector<PlayerButtonCommand> g_inputQueue;
 inline int g_inputIdx = 0;
 
+inline bool g_percentageToggleModEnabled = false;
+
 void toggleVelocityUnroundingPatches(bool enable);
 
 void updateDeltaTime();
 
-bool onPlayerTick(PlayerObject* player, PlayLayer* playLayer, float dt,
-	double lastEventTimestamp);
+bool onPlayerTick(
+	PlayerObject* player, PlayLayer* playLayer, double& lastEventTimestamp);
 
 void onPostCollision(PlayerObject* player, PlayLayer* playLayer);
 
 void advancePlayerToTimestamp(
-	PlayerObject* player, double timestamp, double lastEventTimestamp);
+	PlayerObject* player, double timestamp, double& lastEventTimestamp);
