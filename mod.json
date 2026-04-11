@@ -32,8 +32,7 @@
             "max": 10000,
 			"control": {
 				"slider": false
-			},
-			"enable-if": "!subframes-enabled"
+			}
         },
 
 		"dangerous-settings": {
@@ -53,8 +52,8 @@
 			"control": {
 				"slider": false
 			},
-			"enable-if": "dangerous-settings",
-			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
+			"enable-if": "dangerous-settings && !subframes-enabled",
+			"enable-if-description": "You must enable \"Dangerous Settings\" and disable \"Enable 2.1 Subframes\" to use this"
 		},
 
 		"velocity-unrounding": {
@@ -68,16 +67,7 @@
 
 		"subframes-enabled": {
 			"name": "Enable 2.1 Subframes",
-			"description": "Replicates the \"subframe\" physics behavior of Geometry Dash 2.1, where every frame had four ticks. (Disables input hz, sets tps to be quadrupled internally.)",
-			"type": "bool",
-			"default": false,
-			"enable-if": "dangerous-settings",
-			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
-		},
-
-		"physics-debug-counters": {
-			"name": "Physics Debug Counters",
-			"description": "Logs input/reconcile counters periodically and at flush/reset. For debugging only.",
+			"description": "Replicates the \"subframe\" physics behavior of Geometry Dash 2.1, where every frame had four ticks. (Disables tps, forces it to be 4x input hz.)",
 			"type": "bool",
 			"default": false,
 			"enable-if": "dangerous-settings",

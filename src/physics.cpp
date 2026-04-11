@@ -1,344 +1,302 @@
-// there's like a 50/50 chance this works lol
 #include "global.hpp"
 
-constexpr uint64_t kDebugLogPollInterval = 240;
-float tps;
-
-void checkOrbs(PhysicsState& state, PlayLayer* pl, PlayerObject* player,
-	double pollTimestamp);
-void handleInput(PhysicsState& state, PlayerButtonCommand& input);
-void handleSpiderInput(
-	PhysicsState& state, PlayerObject* player, double pollTimestamp);
-inline double quantizeYVelocity(double velocity);
-
-inline void refreshDebugCounterToggle() {
-	auto* mod = Mod::get();
-	g_debugCountersEnabled =
-		mod && mod->getSettingValue<bool>("physics-debug-counters");
-}
-
-void resetPhysicsDebugCounters() {
-	refreshDebugCounterToggle();
-	g_debugCounters = {};
-	g_lastDebugLogPoll = g_pollCount;
-}
-
-void logPhysicsDebugCounters(char const* reason) {
-	refreshDebugCounterToggle();
-	if (!g_debugCountersEnabled) return;
-
-	log::debug(
-		"[independent-physics] {} | inputs={}, jumpTimed={}, flushes={}, "
-		"dashStops={}, reconciliations={}",
-		reason ? reason : "physics-debug", g_debugCounters.inputsProcessed,
-		g_debugCounters.jumpTimedInputs, g_debugCounters.frameEndFlushes,
-		g_debugCounters.dashStops, g_debugCounters.reconciliations);
-}
-
-inline void maybeLogDebugCounters() {
-	if (!g_debugCountersEnabled) return;
-	if (g_pollCount < g_lastDebugLogPoll + kDebugLogPollInterval) return;
-
-	logPhysicsDebugCounters("periodic");
-	g_lastDebugLogPoll = g_pollCount;
-}
-
-inline void reconcileStateWithPlayer(
-	PhysicsState& state, PlayerObject* player) {
-	if (!player) return;
-
-	CCPoint pos = player->getPosition();
-	double playerYVel = player->m_yVelocity;
-
-	constexpr float kMaxPosDrift = 20.0f;
-	constexpr float kMaxVelDrift = 25.0f;
-	bool outOfSync = std::abs(state.xPos - pos.x) > kMaxPosDrift ||
-		std::abs(state.yPos - pos.y) > kMaxPosDrift ||
-		std::abs(state.yVel - playerYVel) > kMaxVelDrift;
-
-	if (!outOfSync) return;
-
-	g_debugCounters.reconciliations++;
-
-	state.xPos = pos.x;
-	state.yPos = pos.y;
-	state.yVel = quantizeYVelocity(playerYVel);
-	state.isOnGround = player->m_isOnGround;
-	state.isDashing = player->m_isDashing;
-	state.isMini = player->m_vehicleSize - 0.6f < 0.01f;
-	state.Dir = player->m_isUpsideDown ? -1 : 1;
-}
+void checkOrbs(
+	PlayLayer* playLayer, PlayerObject* player, double inputCheckTimestamp);
+void handleInput(PlayerButtonCommand& input, PlayerObject* player,
+	PlayLayer* playLayer, double lastEventTimestamp);
+void handleSpiderInput(PlayerObject* player, double lastEventTimestamp);
 
 #pragma region helpers
 
 void updateDeltaTime() {
 	if (g_subframesEnabled) {
-		g_inputHz = g_tps;
-		tps = g_tps * 4.0f;
-	} else {
-		tps = g_tps;
+		g_tps = g_inputHz * 4.0f;
 	}
-	g_rawDt = 60.0 / tps;
+	g_rawDt = 60.0 / g_tps;
 	g_scaledDt = g_rawDt * 0.9;
 }
 
-int getSpeedIndex(double playerSpeed) {
-	for (int i = 0; i < 5; i++) {
-		if (std::abs(SPEED_TABLE[i].speedName - playerSpeed) < 0.001f) {
-			return i;
-		}
-	}
-	return 0;
-}
-
-void updateShipGravity(PhysicsState& state) {
-	float threshold = state.mGravity * 2.0f;
-	bool wrongDirection =
-		(state.Dir > 0 && state.yVel < 0) || (state.Dir < 0 && state.yVel > 0);
-	bool inDeadzone = (state.yVel > -6.4f && state.yVel < 8.0f);
-	bool belowThreshold = (state.yVel < threshold);
-
-	if (state.isHolding) {
-		if (wrongDirection)
-			state.shipGravCoeff = -0.40f;
-		else if (belowThreshold)
-			state.shipGravCoeff = 0.50f;
-		else
-			state.shipGravCoeff = 0.40f;
-	} else {
-		if (inDeadzone)
-			state.shipGravCoeff = -0.40f;
-		else if (belowThreshold)
-			state.shipGravCoeff = 0.40f;
-		else
-			state.shipGravCoeff = 0.48f;
-	}
-}
-
-void updateUfoGravity(PhysicsState& state) {
-	float threshold = state.mGravity * 2.0f;
-	state.ufoGravCoeff = (state.yVel < threshold) ? 0.4f : 0.6f;
-}
-
-inline double quantizeYVelocity(double velocity) {
+double quantizeYVelocity(double velocity) {
 	velocity = std::clamp(velocity, -1000.0, 1000.0);
+
 	if (g_velocityUnroundingEnabled) {
 		return velocity;
 	}
+
 	double wholePart = static_cast<double>(static_cast<int>(velocity));
-	double value = velocity;
-	if (value != wholePart) {
-		double frac = std::round((value - wholePart) * 1000.0);
+	if (velocity != wholePart) {
+		double frac = std::round((velocity - wholePart) * 1000.0);
 		return frac / 1000.0 + wholePart;
 	}
+
 	return velocity;
 }
 
-void readCollisionResults(PhysicsState& state, PlayerObject* player) {
-	CCPoint newPos = player->getPosition();
-	state.xPos = newPos.x;
-	state.yPos = newPos.y;
-	state.yVel = quantizeYVelocity(player->m_yVelocity);
-	state.isMini = player->m_vehicleSize - 0.6f < 0.01f;
+float getBaseGravity(PlayerObject* player) {
+	if (player->m_isShip || player->m_isBird || player->m_isBall ||
+		player->m_isDart || player->m_isSwing || player->m_isSpider) {
+		return 0.958199f;
+	}
+	return static_cast<float>(player->m_gravity);
+}
+
+float getGravityCoefficient(PlayerObject* player) {
+	bool isMini = std::abs(player->m_vehicleSize - 0.6f) < 0.01f;
+	float divisor = 1.0f;
+
+	if (isMini) {
+		if (player->m_isShip || player->m_isBird || player->m_isSwing) {
+			divisor = 0.85f;
+		} else if (player->m_isDart) {
+			divisor = 1.0f;
+		} else {
+			divisor = 0.8f;
+		}
+	}
 
 	if (player->m_isShip) {
-		state.gamemode = Gamemode::Ship;
-	} else if (player->m_isBird) {
-		state.gamemode = Gamemode::Ufo;
-	} else if (player->m_isBall) {
-		state.gamemode = Gamemode::Ball;
-	} else if (player->m_isDart) {
-		state.gamemode = Gamemode::Wave;
-	} else if (player->m_isRobot) {
-		state.gamemode = Gamemode::Robot;
-	} else if (player->m_isSpider) {
-		state.gamemode = Gamemode::Spider;
-	} else if (player->m_isSwing) {
-		state.gamemode = Gamemode::Swing;
-	} else {
-		state.gamemode = Gamemode::Cube;
+		float threshold = static_cast<float>(player->m_gravity) * 2.0f;
+		double yVel = player->m_yVelocity;
+		bool upsideDown = player->m_isUpsideDown;
+		bool holding = player->m_jumpBuffered;
+		bool wrongDir = (!upsideDown && yVel < 0) || (upsideDown && yVel > 0);
+		bool inDeadzone = (yVel > -6.4f && yVel < 8.0f);
+		bool belowThreshold = (yVel < threshold);
+
+		float coeff;
+		if (holding) {
+			if (wrongDir)
+				coeff = -0.40f;
+			else if (belowThreshold)
+				coeff = 0.50f;
+			else
+				coeff = 0.40f;
+		} else {
+			if (inDeadzone)
+				coeff = -0.40f;
+			else if (belowThreshold)
+				coeff = 0.40f;
+			else
+				coeff = 0.48f;
+		}
+		return coeff / divisor;
 	}
-
-	if (player->m_isUpsideDown && state.Dir > 0) {
-		state.Dir = -1;
-	} else if (!player->m_isUpsideDown && state.Dir < 0) {
-		state.Dir = 1;
+	if (player->m_isBird) {
+		float threshold = static_cast<float>(player->m_gravity) * 2.0f;
+		float coeff = (player->m_yVelocity < threshold) ? 0.4f : 0.6f;
+		return coeff;
 	}
+	if (player->m_isBall) return 0.6f / divisor;
+	if (player->m_isDart) return 0.0f;
+	if (player->m_isRobot) return 0.9f / divisor;
+	if (player->m_isSpider) return 0.6f / divisor;
+	if (player->m_isSwing) return 0.4f / divisor;
 
-	state.speedIndex = getSpeedIndex(player->m_playerSpeed);
-	auto speed = SPEED_TABLE[state.speedIndex];
-	state.mGravity = speed.gravity;
-	state.xSpeed = speed.speedName * speed.speedMult;
+	return 1.0f / divisor;
+}
 
-	if (state.isDashing && !player->m_isDashing) {
-		state.isDashing = false;
-	}
+float getGravityAcceleration(PlayerObject* player, float tps) {
+	if (player->m_isDart) return 0.0f;
 
-	return;
+	float scaledDt = 60.0f / tps * 0.9f;
+	float gravPerTick =
+		getBaseGravity(player) * getGravityCoefficient(player) * scaledDt;
+	gravPerTick = std::round(gravPerTick * 1000.0f) / 1000.0f;
+	return gravPerTick * tps;
 }
 
 #pragma endregion
 
-#pragma region polling loop
+#pragma region continuous formula
 
-void processPollingBoundary(double pollTimestamp,
-	std::vector<PlayerButtonCommand>& inputQueue, int& inputIdx,
-	PlayLayer* playLayer, PlayerObject* p1, PlayerObject* p2,
-	bool flushAllInputs = false) {
-	if (flushAllInputs && inputIdx < inputQueue.size()) {
-		g_debugCounters.frameEndFlushes++;
+float evalYPosition(PlayerObject* player, double secondsSinceEvent, float tps) {
+	float yPos = player->getPositionY();
+	double yVel = player->m_yVelocity;
+
+	if (player->m_isDart) {
+		return yPos + static_cast<float>(yVel * secondsSinceEvent * 60.0);
 	}
 
-	while (inputIdx < inputQueue.size() &&
-		(flushAllInputs || inputQueue[inputIdx].m_timestamp < pollTimestamp)) {
-		g_debugCounters.inputsProcessed++;
-
-		PlayerButtonCommand input = inputQueue[inputIdx];
-		PhysicsState& state = input.m_isPlayer2 ? g_p2State : g_p1State;
-		PlayerObject* player = input.m_isPlayer2 ? p2 : p1;
-
-		playLayer->handleButton(input.m_isPush,
-			static_cast<int>(input.m_button), !input.m_isPlayer2);
-
-		double inputTimestamp = pollTimestamp;
-		if (playLayer->buttonIsRelevant(input)) {
-			g_debugCounters.jumpTimedInputs++;
-			inputTimestamp = input.m_timestamp;
-		}
-
-		if (!input.m_isPush && player && player->m_isDashing) {
-			state.advanceToTimestamp(inputTimestamp, tps);
-			player->m_yVelocity = static_cast<double>(state.yVel);
-			player->setPosition({state.xPos, state.yPos});
-
-			player->stopDashing();
-			state.isDashing = false;
-			g_debugCounters.dashStops++;
-
-			state.yVel = quantizeYVelocity(player->m_yVelocity);
-			CCPoint newPos = player->getPosition();
-			state.xPos = newPos.x;
-			state.yPos = newPos.y;
-			state.lastEventTimestamp = inputTimestamp;
-
-			if (player->m_isUpsideDown && state.Dir > 0) {
-				state.Dir = -1;
-			} else if (!player->m_isUpsideDown && state.Dir < 0) {
-				state.Dir = 1;
-			}
-			inputIdx++;
-			continue;
-		}
-
-		if (state.gamemode == Gamemode::Spider) {
-			if (input.m_isPush && player) {
-				handleSpiderInput(state, player, inputTimestamp);
-			}
-		} else {
-			input.m_timestamp = inputTimestamp;
-			handleInput(state, input);
-			state.isHolding = input.m_isPush;
-		}
-
-		inputIdx++;
-	}
-
-	checkOrbs(g_p1State, playLayer, p1, pollTimestamp);
-	if (p2) checkOrbs(g_p2State, playLayer, p2, pollTimestamp);
+	double gravAccel = getGravityAcceleration(player, tps);
+	return static_cast<float>(yPos + (yVel * secondsSinceEvent) -
+		(0.5 * gravAccel * secondsSinceEvent *
+			(secondsSinceEvent - 1.0 / tps)));
 }
 
-void checkOrbs(PhysicsState& state, PlayLayer* playLayer, PlayerObject* player,
-	double pollTimestamp) {
-	if (!state.isHolding) return;
-	if (!player) return;
+double evalYVelocity(
+	PlayerObject* player, double secondsSinceEvent, float tps) {
+	if (player->m_isDart) return player->m_yVelocity;
+
+	float gravAccel = getGravityAcceleration(player, tps);
+	return player->m_yVelocity - (gravAccel * secondsSinceEvent);
+}
+
+float evalXPosition(PlayerObject* player, double secondsSinceEvent) {
+	float xPos = player->getPositionX();
+	double xSpeed =
+		static_cast<double>(player->m_playerSpeed) * player->m_speedMultiplier;
+	double dir = player->m_isGoingLeft ? -1.0 : 1.0;
+
+	return static_cast<float>(xPos + (xSpeed * dir * secondsSinceEvent * 60.0));
+}
+
+void processInputsUpToTimestamp(double timestamp, PlayerObject* player,
+	PlayLayer* playLayer, bool isPlayer1) {
+	double inputCheckInterval = 1.0 / g_inputHz;
+	double nextInputCheck =
+		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
+
+	double lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+
+	while (nextInputCheck < lastEventTimestamp) {
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+
+	while (nextInputCheck <= timestamp) {
+		while (g_inputIdx < g_inputQueue.size()) {
+			auto& input = g_inputQueue[g_inputIdx];
+
+			bool inputIsP1 = !input.m_isPlayer2;
+			if (inputIsP1 != isPlayer1) {
+				g_inputIdx++;
+				continue;
+			}
+
+			if (input.m_timestamp >= nextInputCheck) break;
+
+			playLayer->handleButton(
+				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
+
+			double inputTimestamp = nextInputCheck;
+			if (playLayer->buttonIsRelevant(input)) {
+				inputTimestamp = input.m_timestamp;
+			}
+
+			if (!input.m_isPush && player->m_isDashing) {
+				advancePlayerToTimestamp(
+					player, inputTimestamp, lastEventTimestamp);
+
+				player->stopDashing();
+
+				lastEventTimestamp = inputTimestamp;
+				g_inputIdx++;
+				continue;
+			}
+
+			if (player->m_isSpider) {
+				if (input.m_isPush) {
+					handleSpiderInput(player, lastEventTimestamp);
+				}
+			} else {
+				input.m_timestamp = inputTimestamp;
+				handleInput(input, player, playLayer, lastEventTimestamp);
+			}
+
+			g_inputIdx++;
+		}
+
+		checkOrbs(playLayer, player, nextInputCheck);
+
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+}
+
+void checkOrbs(
+	PlayLayer* playLayer, PlayerObject* player, double inputCheckTimestamp) {
+	bool isPlayer1 = (player == playLayer->m_player1);
+	double lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+	if (!player->m_jumpBuffered) return;
 
 	CCArray* orbsTouching = player->m_touchingRings;
 	if (!orbsTouching || orbsTouching->count() == 0) return;
 
-	state.advanceToTimestamp(pollTimestamp, tps);
-	player->m_yVelocity = static_cast<double>(state.yVel);
-	player->setPosition({state.xPos, state.yPos});
+	advancePlayerToTimestamp(player, inputCheckTimestamp, lastEventTimestamp);
 
-	RingObject* orb = static_cast<RingObject*>(orbsTouching->objectAtIndex(0));
+	auto orb = static_cast<RingObject*>(orbsTouching->objectAtIndex(0));
 	player->ringJump(orb, false);
 
-	state.yVel = quantizeYVelocity(player->m_yVelocity);
-	state.isOnGround = player->m_isOnGround;
+	lastEventTimestamp = inputCheckTimestamp;
+}
 
-	CCPoint newPos = player->getPosition();
-	state.xPos = newPos.x;
-	state.yPos = newPos.y;
-
-	if (player->m_isUpsideDown && state.Dir > 0) {
-		state.Dir = -1;
-	} else if (!player->m_isUpsideDown && state.Dir < 0) {
-		state.Dir = 1;
-	}
-
+void advancePlayerToTimestamp(
+	PlayerObject* player, double timestamp, double lastEventTimestamp) {
 	if (player->m_isDashing) {
-		state.isDashing = true;
+		lastEventTimestamp = timestamp;
+		return;
 	}
+
+	double secondsSinceLastEvent = timestamp - lastEventTimestamp;
+	if (secondsSinceLastEvent <= 0.0) return;
+
+	double newYVel = evalYVelocity(player, secondsSinceLastEvent, g_tps);
+
+	float newX, newY;
+	if (!player->m_isSideways) {
+		newX = evalXPosition(player, secondsSinceLastEvent);
+		newY = evalYPosition(player, secondsSinceLastEvent, g_tps);
+	} else {
+		newX = evalYPosition(player, secondsSinceLastEvent, g_tps);
+		newY = evalXPosition(player, secondsSinceLastEvent);
+	}
+
+	player->m_yVelocity = newYVel;
+	player->setPosition({newX, newY});
+	lastEventTimestamp = timestamp;
 }
 
 #pragma endregion
 
-#pragma region tick loop
+#pragma region tick handling
 
-void processTickBoundary(PhysicsState& state, PlayLayer* playLayer,
-	PlayerObject* player, double tickTimestamp) {
-	if (!player) return;
+bool onPlayerTick(PlayerObject* player, PlayLayer* playLayer, float dt,
+	double lastEventTimestamp) {
+	if (!player) return false;
+	static_cast<void>(dt);
 
-	player->updateInternalActions(1.0f / tps);
-
-	if (state.isDashing) { // let vanilla handle dashing
-		player->update(static_cast<float>(g_rawDt));
-
-		if (!player->m_isDashing) {
-			state.isDashing = false;
-
-			CCPoint newPos = player->getPosition();
-			state.xPos = newPos.x;
-			state.yPos = newPos.y;
-			state.yVel = quantizeYVelocity(player->m_yVelocity);
-			state.isOnGround = player->m_isOnGround;
-			state.lastEventTimestamp = tickTimestamp;
-
-			if (player->m_isUpsideDown && state.Dir > 0) {
-				state.Dir = -1;
-			} else if (!player->m_isUpsideDown && state.Dir < 0) {
-				state.Dir = 1;
-			}
-		}
-		return;
+	if (player->m_isDashing) {
+		return true;
 	}
 
-	state.advanceToTimestamp(tickTimestamp, tps);
+	double tickTimestamp = g_levelStartTimestamp + g_tickCount * (1.0 / g_tps);
+	bool isPlayer1 = (player == playLayer->m_player1);
 
-	if (state.gamemode == Gamemode::Ship) {
-		updateShipGravity(state);
+	// Process all inputs up to this tick boundary
+	processInputsUpToTimestamp(tickTimestamp, player, playLayer, isPlayer1);
+
+	// Advance our continuous formula to this tick
+	advancePlayerToTimestamp(player, tickTimestamp, lastEventTimestamp);
+
+	if (isPlayer1) {
+		g_tickCount++;
 	}
 
-	if (state.gamemode == Gamemode::Ufo) {
-		updateUfoGravity(state);
-	}
+	return false;
+}
 
-	player->m_yVelocity = static_cast<double>(state.yVel);
-	player->setPosition({state.xPos, state.yPos});
+void onPostCollision(PlayerObject* player, PlayLayer* playLayer) {
+	if (!player || !playLayer) return;
+	bool isPlayer1 = (player == playLayer->m_player1);
+	double lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
 
-	float collisionDt = static_cast<float>(g_scaledDt);
-	playLayer->checkCollisions(player, collisionDt, false);
+	lastEventTimestamp =
+		g_levelStartTimestamp + (g_tickCount - 1) * (1.0 / g_tps);
 
-	bool wasOnGround = state.isOnGround;
-	readCollisionResults(state, player);
-	state.isOnGround = player->m_isOnGround;
+	player->m_yVelocity = quantizeYVelocity(player->m_yVelocity);
 
-	// buffered cube jump
-	if (state.gamemode == Gamemode::Cube && state.isHolding &&
-		state.isOnGround && !wasOnGround) {
-		auto speed = SPEED_TABLE[state.speedIndex];
-		state.yVel = quantizeYVelocity(speed.yStart * state.Dir);
-		state.isOnGround = false;
-		player->m_yVelocity = static_cast<double>(state.yVel);
+	// Buffered cube jump
+	bool isCube = !player->m_isShip && !player->m_isBird && !player->m_isBall &&
+		!player->m_isDart && !player->m_isRobot && !player->m_isSpider &&
+		!player->m_isSwing;
+
+	if (isCube && player->m_jumpBuffered && player->m_isOnGround) {
+		player->m_yVelocity = quantizeYVelocity(
+			player->m_yStart * (player->m_isUpsideDown ? -1.0 : 1.0));
+		player->m_isOnGround = false;
 	}
 
 	if (g_tps != 240.0f) {
@@ -351,187 +309,75 @@ void processTickBoundary(PhysicsState& state, PlayLayer* playLayer,
 
 #pragma region input handlers
 
-void handleInput(PhysicsState& state, PlayerButtonCommand& input) {
-	state.advanceToTimestamp(input.m_timestamp, tps);
+void handleInput(PlayerButtonCommand& input, PlayerObject* player,
+	PlayLayer* playLayer, double lastEventTimestamp) {
+	advancePlayerToTimestamp(player, input.m_timestamp, lastEventTimestamp);
 
-	SpeedData const& speed = SPEED_TABLE[state.speedIndex];
+	int dir = player->m_isUpsideDown ? -1 : 1;
 
-	switch (state.gamemode) {
-		case Gamemode::Cube: {
-			if (input.m_isPush && state.isOnGround) {
-				float gravAcceleration = state.getGravityAcceleration(tps);
-				float gravPerTick = gravAcceleration / tps;
-				state.yVel =
-					quantizeYVelocity((speed.yStart - gravPerTick) * state.Dir);
-				state.isOnGround = false;
-			}
-			state.isHolding = input.m_isPush;
-			break;
+	if (player->m_isShip) {
+		// Ship: holding state changes gravity coefficient, no impulse
+		// (gravity handled by continuous formula)
+
+	} else if (player->m_isBird) {
+		// UFO
+		if (input.m_isPush) {
+			player->m_yVelocity = quantizeYVelocity(7.0 * dir);
 		}
 
-		case Gamemode::Ball: {
-			if (input.m_isPush) {
-				state.yVel = quantizeYVelocity(speed.yStart * 0.3f * state.Dir);
-				state.Dir = -state.Dir;
-			}
-			break;
+	} else if (player->m_isBall) {
+		// Ball: flip gravity, scale velocity
+		if (input.m_isPush) {
+			player->m_isUpsideDown = !player->m_isUpsideDown;
+			player->m_yVelocity = quantizeYVelocity(player->m_yVelocity * 0.3);
 		}
 
-		case Gamemode::Robot: {
-			if (input.m_isPush) {
-				state.yVel = quantizeYVelocity(speed.yStart * 0.5f * state.Dir);
-			}
-			state.isHolding = input.m_isPush;
-			break;
+	} else if (player->m_isDart) {
+		// Wave
+		double baseVel = static_cast<double>(player->m_playerSpeed) *
+			player->m_speedMultiplier;
+		double yVel = baseVel * (input.m_isPush ? 1.0 : -1.0) * dir;
+		bool isMini = std::abs(player->m_vehicleSize - 0.6f) < 0.01f;
+		if (isMini) yVel *= 2.0;
+		player->m_yVelocity = quantizeYVelocity(yVel);
+
+	} else if (player->m_isRobot) {
+		// Robot
+		if (input.m_isPush) {
+			player->m_yVelocity =
+				quantizeYVelocity(player->m_yStart * 0.5 * dir);
 		}
 
-		case Gamemode::Wave: {
-			state.isHolding = input.m_isPush;
-			float baseVel = speed.speedName * speed.speedMult;
-			state.yVel = quantizeYVelocity(
-				baseVel * (state.isHolding ? 1.0f : -1.0f) * state.Dir);
-			if (state.isMini) {
-				state.yVel = quantizeYVelocity(state.yVel * 2.0f);
-			}
-			break;
+	} else if (player->m_isSpider) {
+		// Should not reach here — handled separately
+		if (input.m_isPush) {
+			handleSpiderInput(player, lastEventTimestamp);
 		}
 
-		case Gamemode::Ufo: {
-			if (input.m_isPush) {
-				state.yVel = quantizeYVelocity(7.0f * state.Dir);
-			}
-			state.isHolding = input.m_isPush;
-			break;
+	} else if (player->m_isSwing) {
+		// Swing: dampen velocity, flip gravity
+		if (input.m_isPush) {
+			player->m_yVelocity = quantizeYVelocity(player->m_yVelocity * 0.8);
+			player->m_isUpsideDown = !player->m_isUpsideDown;
 		}
 
-		case Gamemode::Swing: {
-			if (input.m_isPush) {
-				state.yVel = quantizeYVelocity(state.yVel * 0.8f);
-				state.Dir = -state.Dir;
-			}
-			state.isHolding = input.m_isPush;
-			break;
+	} else {
+		// Cube
+		if (input.m_isPush && player->m_isOnGround) {
+			float gravAccel = getGravityAcceleration(player, g_tps);
+			float gravPerTick = gravAccel / g_tps;
+			player->m_yVelocity =
+				quantizeYVelocity((player->m_yStart - gravPerTick) * dir);
+			player->m_isOnGround = false;
 		}
-
-		default:
-			break;
 	}
+
+	lastEventTimestamp = input.m_timestamp;
 }
 
-void handleSpiderInput(
-	PhysicsState& state, PlayerObject* player, double pollTimestamp) {
-	state.advanceToTimestamp(pollTimestamp, tps);
-	// write state to player so vanilla reads correct position
-	player->m_yVelocity = state.yVel;
-	player->setPosition({state.xPos, state.yPos});
-
-	// let vanilla handle the raycast + teleport + gravity flip
+void handleSpiderInput(PlayerObject* player, double lastEventTimestamp) {
 	player->spiderTestJump(false);
-
-	// read back results
-	CCPoint newPos = player->getPosition();
-	state.xPos = newPos.x;
-	state.yPos = newPos.y;
-	state.yVel = quantizeYVelocity(player->m_yVelocity);
-
-	if (player->m_isUpsideDown && state.Dir > 0) {
-		state.Dir = -1;
-	} else if (!player->m_isUpsideDown && state.Dir < 0) {
-		state.Dir = 1;
-	}
-	state.isOnGround = player->m_isOnGround;
-}
-
-#pragma endregion
-
-#pragma region frame loop
-
-void processFrame(PlayLayer* playLayer, PlayerObject* p1, PlayerObject* p2,
-	std::vector<PlayerButtonCommand>& inputQueue, double frameStartTimestamp,
-	double frameEndTimestamp) {
-	refreshDebugCounterToggle();
-
-	p2 = playLayer->m_gameState.m_isDualMode ? playLayer->m_player2 : nullptr;
-
-	std::sort(inputQueue.begin(), inputQueue.end(),
-		[](PlayerButtonCommand const& a, PlayerButtonCommand const& b) {
-			return a.m_timestamp < b.m_timestamp;
-		});
-
-	// advance tick counter to the first tick at or after frameStartTimestamp
-	double tickInterval = 1.0 / tps;
-	double pollInterval = 1.0 / g_inputHz;
-	double nextTickTimestamp = g_levelStartTime + g_tickCount * tickInterval;
-	while (nextTickTimestamp < frameStartTimestamp) {
-		g_tickCount++;
-		nextTickTimestamp += tickInterval;
-	}
-
-	// advance poll counter to the first poll at or after frameStartTimestamp
-	double nextPoll = g_levelStartTime + g_pollCount * pollInterval;
-	while (nextPoll < frameStartTimestamp) {
-		g_pollCount++;
-		nextPoll += pollInterval;
-	}
-
-	int inputIdx = 0;
-
-	while (true) {
-		bool tickInFrame = nextTickTimestamp <= frameEndTimestamp;
-		bool pollInFrame = nextPoll <= frameEndTimestamp;
-
-		if (!tickInFrame && !pollInFrame) break;
-
-		if (tickInFrame && (!pollInFrame || nextTickTimestamp <= nextPoll)) {
-			// process all polling boundaries before or at this tick
-			while (nextPoll <= nextTickTimestamp) {
-				if (nextPoll > frameEndTimestamp) break;
-
-				processPollingBoundary(
-					nextPoll, inputQueue, inputIdx, playLayer, p1, p2);
-				g_pollCount++;
-				nextPoll += pollInterval;
-			}
-
-			// run tick for both players
-			processTickBoundary(g_p1State, playLayer, p1, nextTickTimestamp);
-			if (p2) {
-				processTickBoundary(
-					g_p2State, playLayer, p2, nextTickTimestamp);
-			}
-			g_tickCount++;
-			nextTickTimestamp += tickInterval;
-		} else {
-			processPollingBoundary(
-				nextPoll, inputQueue, inputIdx, playLayer, p1, p2);
-			g_pollCount++;
-			nextPoll += pollInterval;
-		}
-	}
-
-	if (inputIdx < inputQueue.size()) {
-		processPollingBoundary(
-			frameEndTimestamp, inputQueue, inputIdx, playLayer, p1, p2, true);
-		logPhysicsDebugCounters("frame-end-flush");
-	}
-
-	// evaluate render positions at frame end
-	if (!g_p1State.isDashing) {
-		g_p1State.advanceToTimestamp(frameEndTimestamp, tps);
-		p1->setPosition({g_p1State.xPos, g_p1State.yPos});
-	}
-
-	if (p2 && !g_p2State.isDashing) {
-		g_p2State.advanceToTimestamp(frameEndTimestamp, tps);
-		p2->setPosition({g_p2State.xPos, g_p2State.yPos});
-	}
-
-	reconcileStateWithPlayer(g_p1State, p1);
-	if (p2) {
-		reconcileStateWithPlayer(g_p2State, p2);
-	}
-
-	maybeLogDebugCounters();
+	lastEventTimestamp = lastEventTimestamp;
 }
 
 #pragma endregion
