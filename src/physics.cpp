@@ -107,62 +107,99 @@ void handleInput(PlayerButtonCommand& input, PlayerObject* player,
 	PlayLayer* playLayer, double& lastEventTimestamp) {
 	advancePlayerToTimestamp(player, input.m_timestamp, lastEventTimestamp);
 
-	int dir = player->m_isUpsideDown ? -1 : 1;
+	bool isMini = std::abs(player->m_vehicleSize - 1.0f) > 0.01f;
+	float generalSizeScale = isMini ? 0.8f : 1.0f;
+	int dir = player->flipMod();
 
+	if (!input.m_isPush) {
+		// Release handling
+		if (player->m_isShip || player->m_isBird) {
+			// Ship/UFO: holding state changes gravity coefficient
+			// handleButton already updated m_holdingButtons
+		} else if (player->m_isDart) {
+			// Wave: reverse direction on release
+			double baseVel = player->getCurrentXVelocity();
+			double yVel = baseVel * -1.0 * player->flipMod();
+			if (isMini) yVel *= 2.0;
+			player->m_yVelocity = quantizeYVelocity(yVel);
+		}
+		lastEventTimestamp = input.m_timestamp;
+		return;
+	}
+
+	// Click handling
 	if (player->m_isShip) {
-		// Ship: holding state changes gravity coefficient, no impulse
-		// (gravity handled by continuous formula)
+		// Ship: holding state change, handleButton sets m_holdingButtons
+		// Gravity coefficient change handled by the formula
 
 	} else if (player->m_isBird) {
-		// UFO
-		if (input.m_isPush) {
-			player->m_yVelocity = quantizeYVelocity(7.0 * dir);
-		}
-
-	} else if (player->m_isBall) {
-		// Ball: flip gravity, scale velocity
-		if (input.m_isPush) {
-			player->m_isUpsideDown = !player->m_isUpsideDown;
-			player->m_yVelocity = quantizeYVelocity(player->m_yVelocity * 0.3);
+		// UFO: impulse at input time
+		if (player->m_isOnGround || player->m_stateRingJump) {
+			float impulse = isMini ? 8.0f : 7.0f;
+			impulse *= generalSizeScale;
+			player->m_yVelocity = quantizeYVelocity(dir * impulse);
+			player->m_isOnGround = false;
+			player->m_isOnGround2 = false;
+			player->m_stateRingJump = false;
+			player->m_touchedPad = false;
 		}
 
 	} else if (player->m_isDart) {
-		// Wave
-		double baseVel = static_cast<double>(player->m_playerSpeed) *
-			player->m_speedMultiplier;
-		double yVel = baseVel * (input.m_isPush ? 1.0 : -1.0) * dir;
-		bool isMini = std::abs(player->m_vehicleSize - 0.6f) < 0.01f;
+		// Wave: set velocity direction on press
+		double baseVel = player->getCurrentXVelocity();
+		double yVel = baseVel * 1.0 * dir;
 		if (isMini) yVel *= 2.0;
 		player->m_yVelocity = quantizeYVelocity(yVel);
 
-	} else if (player->m_isRobot) {
-		// Robot
-		if (input.m_isPush) {
-			player->m_yVelocity =
-				quantizeYVelocity(player->m_yStart * 0.5 * dir);
-		}
-
-	} else if (player->m_isSpider) {
-		// Spider
-		if (input.m_isPush) {
-			player->spiderTestJump(false);
+	} else if (player->m_isBall) {
+		// Ball: flip gravity + scale velocity
+		if (player->m_isOnGround) {
+			player->flipGravity(!player->m_isUpsideDown, true);
+			player->m_yVelocity = quantizeYVelocity(player->m_yVelocity * 0.6);
+			player->m_jumpBuffered = false;
+			player->m_isOnGround = false;
 		}
 
 	} else if (player->m_isSwing) {
-		// Swing: dampen velocity, flip gravity
-		if (input.m_isPush) {
+		// Swing: flip gravity + dampen velocity
+		if (player->m_isOnGround || player->m_stateRingJump) {
+			player->flipGravity(!player->m_isUpsideDown, true);
 			player->m_yVelocity = quantizeYVelocity(player->m_yVelocity * 0.8);
-			player->m_isUpsideDown = !player->m_isUpsideDown;
+			player->m_jumpBuffered = false;
+			player->m_stateRingJump = false;
+			player->m_isOnGround = false;
+		}
+
+	} else if (player->m_isSpider) {
+		if (player->m_isOnGround) {
+			player->spiderTestJump(player->m_isUpsideDown);
+			player->m_jumpBuffered = false;
+		}
+
+	} else if (player->m_isRobot) {
+		// Robot: initial impulse
+		if (player->m_isOnGround) {
+			float impulse = (float) player->m_yStart * 0.5f * generalSizeScale;
+			player->m_yVelocity = quantizeYVelocity(dir * impulse);
+			player->m_isOnGround = false;
+			player->m_isOnGround2 = false;
+			player->m_stateRingJump = false;
+			player->m_touchedPad = false;
+			player->m_accelerationOrSpeed = 0.0f;
+			player->m_maybeIsBoosted = true;
 		}
 
 	} else {
-		// Cube
-		if (input.m_isPush && player->m_isOnGround) {
-			float gravAccel = getGravityAcceleration(player, g_tps);
-			float gravPerTick = gravAccel / g_tps;
-			player->m_yVelocity =
-				quantizeYVelocity((player->m_yStart - gravPerTick) * dir);
+		// Cube: jump impulse
+		if (player->m_isOnGround) {
+			float impulse = (float) player->m_yStart * generalSizeScale;
+			player->m_yVelocity = quantizeYVelocity(dir * impulse);
 			player->m_isOnGround = false;
+			player->m_isOnGround2 = false;
+			player->m_stateRingJump = false;
+			player->m_touchedPad = false;
+			player->m_accelerationOrSpeed = 0.0f;
+			player->m_maybeIsBoosted = true;
 		}
 	}
 
@@ -182,50 +219,53 @@ float evalYPosition(PlayerObject* player, double secondsSinceEvent, float tps) {
 		return yPos + static_cast<float>(yVel * t * 60.0);
 	}
 
-	double gravAccel = getGravityAcceleration(player, tps);
+	double g = getGravityAcceleration(player, tps);
 	return yPos +
 		static_cast<float>(
-			((yVel * t) - (0.5 * gravAccel * t * (t - 1.0 / tps))) * 54.0);
+			((yVel * t) - (0.5 * g * t * (t - 1.0 / tps))) * 54.0);
 }
 
 double evalYVelocity(
 	PlayerObject* player, double secondsSinceEvent, float tps) {
 	if (player->m_isDart) return player->m_yVelocity;
 
-	float gravAccel = getGravityAcceleration(player, tps);
-	return player->m_yVelocity - (gravAccel * secondsSinceEvent);
+	float g = getGravityAcceleration(player, tps);
+	return player->m_yVelocity - (g * secondsSinceEvent);
 }
 
 float evalXPosition(PlayerObject* player, double secondsSinceEvent) {
 	float xPos = player->getPositionX();
-	double xSpeed =
-		static_cast<double>(player->m_playerSpeed) * player->m_speedMultiplier;
-	double dir = player->m_isGoingLeft ? -1.0 : 1.0;
+	double xSpeed = player->getCurrentXVelocity();
+	double dir = player->reverseMod();
 
 	return static_cast<float>(xPos + (xSpeed * dir * secondsSinceEvent * 60.0));
 }
 
-void processInputsUpToTimestamp(double timestamp, PlayerObject* player,
+void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
 	PlayLayer* playLayer, bool isPlayer1) {
+	double& lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+
 	double inputCheckInterval = 1.0 / g_inputHz;
 	double nextInputCheck =
 		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
 
-	double& lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
-
+	// Catch up to current time
 	while (nextInputCheck < lastEventTimestamp) {
 		g_inputChecksCount++;
 		nextInputCheck += inputCheckInterval;
 	}
 
-	while (nextInputCheck <= timestamp) {
-		while (g_inputIdx < g_inputQueue.size()) {
-			auto& input = g_inputQueue[g_inputIdx];
+	// Use local index so both players can scan the full queue independently
+	int localIdx = 0;
+
+	while (nextInputCheck <= tickTimestamp) {
+		while (localIdx < static_cast<int>(g_inputQueue.size())) {
+			auto& input = g_inputQueue[localIdx];
 
 			bool inputIsP1 = !input.m_isPlayer2;
 			if (inputIsP1 != isPlayer1) {
-				g_inputIdx++;
+				localIdx++;
 				continue;
 			}
 
@@ -234,26 +274,22 @@ void processInputsUpToTimestamp(double timestamp, PlayerObject* player,
 			playLayer->handleButton(
 				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
 
-			double inputTimestamp = nextInputCheck;
-			if (playLayer->buttonIsRelevant(input)) {
-				inputTimestamp = input.m_timestamp;
-			}
-
 			if (!input.m_isPush && player->m_isDashing) {
 				advancePlayerToTimestamp(
-					player, inputTimestamp, lastEventTimestamp);
-
+					player, nextInputCheck, lastEventTimestamp);
 				player->stopDashing();
-
-				lastEventTimestamp = inputTimestamp;
-				g_inputIdx++;
+				lastEventTimestamp = nextInputCheck;
+				localIdx++;
 				continue;
 			}
 
-			input.m_timestamp = inputTimestamp;
+			// Snap input timestamp to polling boundary for handleInput
+			double originalTimestamp = input.m_timestamp;
+			input.m_timestamp = nextInputCheck;
 			handleInput(input, player, playLayer, lastEventTimestamp);
+			input.m_timestamp = originalTimestamp;
 
-			g_inputIdx++;
+			localIdx++;
 		}
 
 		g_inputChecksCount++;
@@ -291,35 +327,10 @@ void advancePlayerToTimestamp(
 
 #pragma region tick handling
 
-bool onPlayerTick(
-	PlayerObject* player, PlayLayer* playLayer, double& lastEventTimestamp) {
-	if (!player) return true;
-
-	if (player->m_isDashing) {
-		return true;
-	}
-
-	double tickTimestamp = g_levelStartTimestamp + g_tickCount * (1.0 / g_tps);
-	bool isPlayer1 = (player == playLayer->m_player1);
-
-	// Process all inputs up to this tick boundary
-	processInputsUpToTimestamp(tickTimestamp, player, playLayer, isPlayer1);
-
-	// Advance our continuous formula to this tick
-	advancePlayerToTimestamp(player, tickTimestamp, lastEventTimestamp);
-
-	if (isPlayer1) {
-		g_tickCount++;
-	}
-
-	return false;
-}
-
 void onPostCollision(PlayerObject* player, PlayLayer* playLayer) {
 	if (!player || !playLayer) return;
-	bool isPlayer1 = (player == playLayer->m_player1);
 	double& lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+		player->isPlayer1() ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
 
 	lastEventTimestamp =
 		g_levelStartTimestamp + (g_tickCount - 1) * (1.0 / g_tps);
@@ -327,19 +338,18 @@ void onPostCollision(PlayerObject* player, PlayLayer* playLayer) {
 	player->m_yVelocity = quantizeYVelocity(player->m_yVelocity);
 
 	// Buffered cube jump
-	bool isCube = !player->m_isShip && !player->m_isBird && !player->m_isBall &&
-		!player->m_isDart && !player->m_isRobot && !player->m_isSpider &&
-		!player->m_isSwing;
-
-	if (isCube && player->m_jumpBuffered && player->m_isOnGround) {
+	if (player->isInNormalMode() && player->m_jumpBuffered &&
+		player->m_isOnGround) {
+		bool isMini = std::abs(player->m_vehicleSize - 1.0f) > 0.01f;
+		float generalSizeScale = isMini ? 0.8f : 1.0f;
 		player->m_yVelocity = quantizeYVelocity(
-			player->m_yStart * (player->m_isUpsideDown ? -1.0 : 1.0));
+			player->m_yStart * player->flipMod() * generalSizeScale);
 		player->m_isOnGround = false;
-	}
-
-	if (g_tps != 240.0f && !g_percentageToggleModEnabled) {
-		playLayer->m_gameState.m_currentProgress =
-			static_cast<int>(playLayer->m_gameState.m_levelTime * 240.0);
+		player->m_isOnGround2 = false;
+		player->m_stateRingJump = false;
+		player->m_touchedPad = false;
+		player->m_accelerationOrSpeed = 0.0f;
+		player->m_maybeIsBoosted = true;
 	}
 }
 

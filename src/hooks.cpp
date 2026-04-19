@@ -1,6 +1,6 @@
 #include "global.hpp"
 
-static double g_frameStartTime = 0.0;
+static double s_frameStartTime = 0.0;
 
 class $modify(CCEGLView) {
 	void pollEvents() {
@@ -18,7 +18,7 @@ class $modify(CCEGLView) {
 			}
 		}
 
-		g_frameStartTime = geode::utils::getInputTimestamp();
+		s_frameStartTime = geode::utils::getInputTimestamp();
 		CCEGLView::pollEvents();
 	}
 };
@@ -28,9 +28,6 @@ class $modify(PlayLayer) {
 		bool result = PlayLayer::init(level, useReplay, dontCreateObjects);
 		if (!result) return false;
 
-		g_percentageToggleModEnabled =
-			Loader::get()->isModLoaded("zsa.percentage-toggle");
-
 		this->m_clickBetweenSteps = false;
 		this->m_clickOnSteps = false;
 
@@ -39,7 +36,6 @@ class $modify(PlayLayer) {
 		g_inputChecksCount = 0;
 		g_firstFrame = true;
 		g_inputQueue.clear();
-		g_inputIdx = 0;
 
 		g_p1LastEventTimestamp = g_levelStartTimestamp;
 		g_p2LastEventTimestamp = g_levelStartTimestamp;
@@ -56,7 +52,6 @@ class $modify(PlayLayer) {
 		g_inputChecksCount = 0;
 		g_levelStartTimestamp = geode::utils::getInputTimestamp();
 		g_inputQueue.clear();
-		g_inputIdx = 0;
 
 		g_p1LastEventTimestamp = g_levelStartTimestamp;
 		g_p2LastEventTimestamp = g_levelStartTimestamp;
@@ -75,11 +70,7 @@ class $modify(GJBaseGameLayer) {
 		if (g_modActive) {
 			PlayLayer* playLayer = PlayLayer::get();
 			if (playLayer) {
-				if (object == playLayer->m_player1) {
-					onPostCollision(object, playLayer);
-				} else if (object == playLayer->m_player2) {
-					onPostCollision(object, playLayer);
-				}
+				onPostCollision(object, playLayer);
 			}
 		}
 
@@ -97,7 +88,7 @@ class $modify(GJBaseGameLayer) {
 
 		if (g_firstFrame) {
 			g_firstFrame = false;
-			g_levelStartTimestamp = g_frameStartTime;
+			g_levelStartTimestamp = s_frameStartTime;
 			g_p1LastEventTimestamp = g_levelStartTimestamp;
 			g_p2LastEventTimestamp = g_levelStartTimestamp;
 			GJBaseGameLayer::update(dt);
@@ -110,7 +101,6 @@ class $modify(GJBaseGameLayer) {
 			return;
 		}
 
-		// Capture and sort inputs for this frame
 		g_inputQueue.insert(g_inputQueue.end(),
 			playLayer->m_queuedButtons.begin(),
 			playLayer->m_queuedButtons.end());
@@ -121,12 +111,8 @@ class $modify(GJBaseGameLayer) {
 				return a.m_timestamp < b.m_timestamp;
 			});
 
-		g_inputIdx = 0;
-
-		// Let vanilla run its entire step loop
 		GJBaseGameLayer::update(dt);
 
-		// Render positions at frame end for smooth sub-tick visuals
 		double frameEnd = geode::utils::getInputTimestamp();
 		PlayerObject* p1 = playLayer->m_player1;
 		PlayerObject* p2 = playLayer->m_gameState.m_isDualMode
@@ -141,32 +127,46 @@ class $modify(GJBaseGameLayer) {
 		}
 
 		g_inputQueue.clear();
-		g_inputIdx = 0;
 	}
 };
 
 class $modify(PlayerObject) {
 	void update(float dt) {
-		PlayLayer* pl = PlayLayer::get();
-
-		if (!g_modActive || !pl) {
+		auto* playLayer = PlayLayer::get();
+		if (!playLayer || !g_modActive || this->m_isDashing) {
 			PlayerObject::update(dt);
 			return;
 		}
 
-		bool useVanilla = true;
-		if (this == pl->m_player1) {
-			useVanilla = onPlayerTick(this, pl, g_p1LastEventTimestamp);
-		} else if (this == pl->m_player2) {
-			useVanilla = onPlayerTick(this, pl, g_p2LastEventTimestamp);
-		}
+		bool isPlayer1 = this->isPlayer1();
+		double& lastEventTimestamp =
+			isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
 
-		if (useVanilla) {
-			PlayerObject::update(dt);
+		double tickTimestamp =
+			g_levelStartTimestamp + g_tickCount * (1.0 / g_tps);
+
+		processInputsUpToTimestamp(tickTimestamp, this, playLayer, isPlayer1);
+
+		advancePlayerToTimestamp(this, tickTimestamp, lastEventTimestamp);
+
+		float savedX = this->getPositionX();
+		float savedY = this->getPositionY();
+		double savedVel = this->m_yVelocity;
+
+		// call vanilla function to handle lots of stuff
+		PlayerObject::update(dt);
+
+		// overwrite changes to position and velocity
+		this->setPosition({savedX, savedY});
+		this->m_yVelocity = savedVel;
+
+		if (isPlayer1) {
+			g_tickCount++;
 		}
 	}
 
 	void setYVelocity(double velocity, int type) {
+		// probably redundant since velocity is overwritten and quantizeYVelocity would handle it
 		if (g_velocityUnroundingEnabled) {
 			this->m_yVelocity = velocity;
 			return;

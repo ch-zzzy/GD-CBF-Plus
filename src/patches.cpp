@@ -24,11 +24,11 @@ struct PatchGroup {
 	}
 };
 
-static PatchGroup g_velocityUnroundingPatches;
+static PatchGroup s_velocityUnroundingPatches;
 
 void toggleVelocityUnroundingPatches(bool enable) {
-	if (g_velocityUnroundingPatches.patches.empty()) {
-		g_velocityUnroundingPatches.init({
+	if (s_velocityUnroundingPatches.patches.empty()) {
+		s_velocityUnroundingPatches.init({
 			// PlayerObject patches
 			{0x38C329, 0x24}, // updateJump yvel rounding
 			{0x213EA2, 0x32}, // checkCollisions yvel rounding
@@ -38,5 +38,5 @@ void toggleVelocityUnroundingPatches(bool enable) {
 		});
 	}
 
-	g_velocityUnroundingPatches.toggle(enable);
+	s_velocityUnroundingPatches.toggle(enable);
 }

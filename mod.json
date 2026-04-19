@@ -58,7 +58,7 @@
 
 		"velocity-unrounding": {
 			"name": "Velocity Unrounding",
-			"description": "Implementation of Velocity Unrounding, which prevents the game from rounding your velocity to 3 decimal places.",
+			"description": "Implementation of Velocity Unrounding, which prevents the game from rounding y-velocity to 3 decimal places.",
 			"type": "bool",
 			"default": false,
 			"enable-if": "dangerous-settings",

@@ -13,6 +13,7 @@
 using namespace geode::prelude;
 
 inline double g_levelStartTimestamp = 0.0;
+
 inline double g_p1LastEventTimestamp = 0.0;
 inline double g_p2LastEventTimestamp = 0.0;
 
@@ -30,20 +31,12 @@ inline bool g_subframesEnabled = false;
 inline double g_rawDt = 60.0 / 240.0;
 inline double g_scaledDt = g_rawDt * 0.9;
 
-// Input queue captured at frame start, consumed during vanilla's step loop
 inline std::vector<PlayerButtonCommand> g_inputQueue;
-inline int g_inputIdx = 0;
-
-inline bool g_percentageToggleModEnabled = false;
 
 void toggleVelocityUnroundingPatches(bool enable);
-
 void updateDeltaTime();
-
-bool onPlayerTick(
-	PlayerObject* player, PlayLayer* playLayer, double& lastEventTimestamp);
-
 void onPostCollision(PlayerObject* player, PlayLayer* playLayer);
-
 void advancePlayerToTimestamp(
 	PlayerObject* player, double timestamp, double& lastEventTimestamp);
+void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
+	PlayLayer* playLayer, bool isPlayer1);
