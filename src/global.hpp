@@ -12,6 +12,8 @@
 
 using namespace geode::prelude;
 
+inline auto g_mod = Mod::get();
+
 inline double g_levelStartTimestamp = 0.0;
 
 inline double g_p1LastEventTimestamp = 0.0;

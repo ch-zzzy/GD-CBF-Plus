@@ -1,7 +1,7 @@
 #include "global.hpp"
 
 $on_mod(Loaded) {
-	g_tps = Mod::get()->getSettingValue<float>("tps");
+	g_tps = g_mod->getSettingValue<float>("tps");
 	updateDeltaTime();
 	listenForSettingChanges<float>(
 		"tps", +[](float val) {
@@ -9,12 +9,12 @@ $on_mod(Loaded) {
 			updateDeltaTime();
 		});
 
-	g_inputHz = Mod::get()->getSettingValue<float>("input-hz");
+	g_inputHz = g_mod->getSettingValue<float>("input-hz");
 	listenForSettingChanges<float>(
 		"input-hz", +[](float val) { g_inputHz = val; });
 
 	g_velocityUnroundingEnabled =
-		Mod::get()->getSettingValue<bool>("velocity-unrounding");
+		g_mod->getSettingValue<bool>("velocity-unrounding");
 	toggleVelocityUnroundingPatches(g_velocityUnroundingEnabled);
 	listenForSettingChanges<bool>(
 		"velocity-unrounding", +[](bool val) {
@@ -22,14 +22,14 @@ $on_mod(Loaded) {
 			toggleVelocityUnroundingPatches(val);
 		});
 
-	g_subframesEnabled = Mod::get()->getSettingValue<bool>("subframes-enabled");
+	g_subframesEnabled = g_mod->getSettingValue<bool>("subframes-enabled");
 	listenForSettingChanges<bool>(
 		"subframes-enabled", +[](bool val) {
 			g_subframesEnabled = val;
 			updateDeltaTime();
 		});
 
-	g_modActive = !Mod::get()->getSettingValue<bool>("mod-disabled");
+	g_modActive = !g_mod->getSettingValue<bool>("mod-disabled");
 	listenForSettingChanges<bool>(
 		"mod-disabled", +[](bool val) { g_modActive = !val; });
 }

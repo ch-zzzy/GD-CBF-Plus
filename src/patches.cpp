@@ -6,7 +6,7 @@ struct PatchGroup {
 	void init(std::initializer_list<std::pair<ptrdiff_t, size_t>> entries) {
 		for (auto& [offset, size] : entries) {
 			std::vector<uint8_t> nops(size, 0x90);
-			auto result = Mod::get()->patch(
+			auto result = g_mod->patch(
 				reinterpret_cast<void*>(base::get() + offset), nops);
 			if (result.isOk()) {
 				auto* patch = result.unwrap();

@@ -5,6 +5,8 @@
 void updateDeltaTime() {
 	if (g_subframesEnabled) {
 		g_tps = g_inputHz * 4.0f;
+	} else {
+		g_tps = Mod::get()->getSettingValue<float>("tps");
 	}
 	g_rawDt = 60.0 / g_tps;
 	g_scaledDt = g_rawDt * 0.9;
@@ -27,11 +29,11 @@ double quantizeYVelocity(double velocity) {
 }
 
 float getBaseGravity(PlayerObject* player) {
-	if (player->m_isShip || player->m_isBird || player->m_isBall ||
-		player->m_isDart || player->m_isSwing || player->m_isSpider) {
+	if (player->isInBasicMode()) {
+		return static_cast<float>(player->m_gravity);
+	} else {
 		return 0.958199f;
 	}
-	return static_cast<float>(player->m_gravity);
 }
 
 float getGravityCoefficient(PlayerObject* player) {
@@ -42,7 +44,7 @@ float getGravityCoefficient(PlayerObject* player) {
 		if (player->m_isShip || player->m_isBird || player->m_isSwing) {
 			divisor = 0.85f;
 		} else if (player->m_isDart) {
-			divisor = 1.0f;
+			divisor = 1.0f; // useless since wave has no gravity accel
 		} else {
 			divisor = 0.8f;
 		}
@@ -78,7 +80,7 @@ float getGravityCoefficient(PlayerObject* player) {
 	if (player->m_isBird) {
 		float threshold = static_cast<float>(player->m_gravity) * 2.0f;
 		float coeff = (player->m_yVelocity < threshold) ? 0.4f : 0.6f;
-		return coeff;
+		return coeff / divisor;
 	}
 	if (player->m_isBall) return 0.6f / divisor;
 	if (player->m_isDart) return 0.0f;
@@ -236,7 +238,7 @@ double evalYVelocity(
 float evalXPosition(PlayerObject* player, double secondsSinceEvent) {
 	float xPos = player->getPositionX();
 	double xSpeed = player->getCurrentXVelocity();
-	double dir = player->reverseMod();
+	int dir = player->reverseMod();
 
 	return static_cast<float>(xPos + (xSpeed * dir * secondsSinceEvent * 60.0));
 }
@@ -256,16 +258,15 @@ void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
 		nextInputCheck += inputCheckInterval;
 	}
 
-	// Use local index so both players can scan the full queue independently
-	int localIdx = 0;
+	int inputIdx = 0;
 
 	while (nextInputCheck <= tickTimestamp) {
-		while (localIdx < static_cast<int>(g_inputQueue.size())) {
-			auto& input = g_inputQueue[localIdx];
+		while (inputIdx < static_cast<int>(g_inputQueue.size())) {
+			auto& input = g_inputQueue[inputIdx];
 
 			bool inputIsP1 = !input.m_isPlayer2;
 			if (inputIsP1 != isPlayer1) {
-				localIdx++;
+				inputIdx++;
 				continue;
 			}
 
@@ -279,17 +280,16 @@ void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
 					player, nextInputCheck, lastEventTimestamp);
 				player->stopDashing();
 				lastEventTimestamp = nextInputCheck;
-				localIdx++;
+				inputIdx++;
 				continue;
 			}
 
-			// Snap input timestamp to polling boundary for handleInput
 			double originalTimestamp = input.m_timestamp;
 			input.m_timestamp = nextInputCheck;
 			handleInput(input, player, playLayer, lastEventTimestamp);
 			input.m_timestamp = originalTimestamp;
 
-			localIdx++;
+			inputIdx++;
 		}
 
 		g_inputChecksCount++;

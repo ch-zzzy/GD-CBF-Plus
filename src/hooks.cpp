@@ -3,22 +3,24 @@
 static double s_frameStartTime = 0.0;
 
 class $modify(CCEGLView) {
+	// copied from cbf lol
 	void pollEvents() {
 		PlayLayer* playLayer = PlayLayer::get();
-
-		if (playLayer) {
-			CCNode* parent = playLayer->getParent();
-			bool shouldReset = !parent ||
-				parent->getChildByType<PauseLayer>(0) ||
-				playLayer->getChildByType<EndLevelLayer>(0) || !GetFocus() ||
-				playLayer->m_playerDied;
-
-			if (shouldReset) {
-				g_firstFrame = true;
-			}
-		}
+		CCNode* parent;
 
 		s_frameStartTime = geode::utils::getInputTimestamp();
+
+		// clang-format off
+		if (!GetFocus() || !playLayer
+			|| !(parent = playLayer->getParent())
+			|| parent->getChildByType<PauseLayer>(0)
+			|| playLayer->getChildByType<EndLevelLayer>(0)
+			|| playLayer->m_playerDied)
+		{
+			g_firstFrame = true;
+		}
+		// clang-format on
+
 		CCEGLView::pollEvents();
 	}
 };
@@ -40,7 +42,7 @@ class $modify(PlayLayer) {
 		g_p1LastEventTimestamp = g_levelStartTimestamp;
 		g_p2LastEventTimestamp = g_levelStartTimestamp;
 
-		g_modActive = true;
+		g_modActive = !g_mod->getSettingValue<bool>("mod-disabled");
 		return true;
 	}
 
