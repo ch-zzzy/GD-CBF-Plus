@@ -4,11 +4,11 @@
 		"win": "2.2081"
 	},
 
-	"id": "chizz.continuous-physics",
-	"name": "Continuous Physics",
+	"id": "chizz.cbf-plus",
+	"name": "CBF+",
 	"version": "v1.0.0",
 	"developer": "chizz",
-	"description": "Reworks physics engine for interpolation.",
+	"description": "Reworks physics for input interpolation.",
 	"tags": [
         "gameplay",
         "enhancement",
@@ -36,7 +36,7 @@
         },
 
 		"dangerous-settings": {
-			"name": "Dangerous Settings 😬",
+			"name": "Dangerous Settings",
 			"description": "These settings change physics from vanilla and are not recommended for general use.",
 			"type": "bool",
 			"default": false
