@@ -37,8 +37,11 @@ inline std::vector<PlayerButtonCommand> g_inputQueue;
 
 void toggleVelocityUnroundingPatches(bool enable);
 void updateDeltaTime();
+double quantizeYVelocity(double velocity);
 void onPostCollision(PlayerObject* player, PlayLayer* playLayer);
 void advancePlayerToTimestamp(
 	PlayerObject* player, double timestamp, double& lastEventTimestamp);
+void handleInput(PlayerButtonCommand& input, PlayerObject* player,
+	PlayLayer* playLayer, double& lastEventTimestamp);
 void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
 	PlayLayer* playLayer, bool isPlayer1);
