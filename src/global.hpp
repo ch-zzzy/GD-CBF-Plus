@@ -30,13 +30,10 @@ inline bool g_modActive = false;
 inline bool g_velocityUnroundingEnabled = false;
 inline bool g_subframesEnabled = false;
 
-inline double g_rawDt = 60.0 / 240.0;
-inline double g_scaledDt = g_rawDt * 0.9;
-
 inline std::vector<PlayerButtonCommand> g_inputQueue;
 
 void toggleVelocityUnroundingPatches(bool enable);
-void updateDeltaTime();
+void updateTPS();
 double quantizeYVelocity(double velocity);
 void onPostCollision(PlayerObject* player, PlayLayer* playLayer);
 void advancePlayerToTimestamp(

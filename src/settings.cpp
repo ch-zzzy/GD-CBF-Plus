@@ -2,11 +2,11 @@
 
 $on_mod(Loaded) {
 	g_tps = g_mod->getSettingValue<float>("tps");
-	updateDeltaTime();
+	updateTPS();
 	listenForSettingChanges<float>(
 		"tps", +[](float val) {
 			g_tps = val;
-			updateDeltaTime();
+			updateTPS();
 		});
 
 	g_inputHz = g_mod->getSettingValue<float>("input-hz");
@@ -26,7 +26,7 @@ $on_mod(Loaded) {
 	listenForSettingChanges<bool>(
 		"subframes-enabled", +[](bool val) {
 			g_subframesEnabled = val;
-			updateDeltaTime();
+			updateTPS();
 		});
 
 	g_modActive = !g_mod->getSettingValue<bool>("mod-disabled");

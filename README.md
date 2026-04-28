@@ -30,7 +30,7 @@ For example, a cube at 1x speed falling under gravity at 240 TPS:
 
 Those clearly don't match. This comes from gravity being applied to velocity before
 displacement in each subtick. Splitting one tick into two smaller ones changes the
-intermediate velocity, which changes the total displacement. The error varies with split position and accumulates over an attempt. Note that in actuality, velocity is rounded to 3 decimal places. For the sake of "simplicity" I decided to use the full non-rounded values in the example. In game the disparity may be even worse due to the lost precision.
+intermediate velocity, which changes the total displacement. The error varies with split position and can accumulate. Note that in actuality, velocity is rounded to 3 decimal places. For the sake of "simplicity" I decided to use the full non-rounded values in the example. In game the disparity may be even worse due to the lost precision.
 
 This mod takes a different approach: instead of splitting ticks, it evaluates the player's position
 using a continuous formula that reproduces vanilla's physics exactly at every tick boundary.
@@ -43,7 +43,7 @@ from vanilla.
 ## Future plans
 
 - Platformer support
-- 2.1 physics mode (velocity unrounding + subframes is close for now)
+- 2.1 mode (use Velocity UnRounding and Enable 2.1 Subframes to replicate 2.1 physics. 2.1 exclusive bugs not yet available.)
 - Non-Windows support
 - Botting support
 

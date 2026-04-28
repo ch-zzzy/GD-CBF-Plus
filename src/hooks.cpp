@@ -149,18 +149,9 @@ class $modify(PlayerObject) {
 
 		processInputsUpToTimestamp(tickTimestamp, this, playLayer, isPlayer1);
 
-		advancePlayerToTimestamp(this, tickTimestamp, lastEventTimestamp);
-
-		float savedX = this->getPositionX();
-		float savedY = this->getPositionY();
-		double savedVel = this->m_yVelocity;
-
-		// call vanilla function to handle lots of stuff
 		PlayerObject::update(dt);
 
-		// overwrite changes to position and velocity
-		this->setPosition({savedX, savedY});
-		this->m_yVelocity = savedVel;
+		advancePlayerToTimestamp(this, tickTimestamp, lastEventTimestamp);
 
 		if (isPlayer1) {
 			g_tickCount++;
@@ -168,7 +159,6 @@ class $modify(PlayerObject) {
 	}
 
 	void setYVelocity(double velocity, int type) {
-		// probably redundant since velocity is overwritten and quantizeYVelocity would handle it
 		if (g_velocityUnroundingEnabled) {
 			this->m_yVelocity = velocity;
 			return;

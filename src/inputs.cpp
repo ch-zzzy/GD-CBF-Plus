@@ -1,5 +1,59 @@
 #include "global.hpp"
 
+void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
+	PlayLayer* playLayer, bool isPlayer1) {
+	double& lastEventTimestamp =
+		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
+
+	double inputCheckInterval = 1.0 / g_inputHz;
+	double nextInputCheck =
+		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
+
+	// Catch up to current time
+	while (nextInputCheck < lastEventTimestamp) {
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+
+	int inputIdx = 0;
+
+	while (nextInputCheck <= tickTimestamp) {
+		while (inputIdx < static_cast<int>(g_inputQueue.size())) {
+			auto& input = g_inputQueue[inputIdx];
+
+			bool inputIsP1 = !input.m_isPlayer2;
+			if (inputIsP1 != isPlayer1) {
+				inputIdx++;
+				continue;
+			}
+
+			if (input.m_timestamp >= nextInputCheck) break;
+
+			playLayer->handleButton(
+				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
+
+			if (!input.m_isPush && player->m_isDashing) {
+				advancePlayerToTimestamp(
+					player, nextInputCheck, lastEventTimestamp);
+				player->stopDashing();
+				lastEventTimestamp = nextInputCheck;
+				inputIdx++;
+				continue;
+			}
+
+			double originalTimestamp = input.m_timestamp;
+			input.m_timestamp = nextInputCheck;
+			handleInput(input, player, playLayer, lastEventTimestamp);
+			input.m_timestamp = originalTimestamp;
+
+			inputIdx++;
+		}
+
+		g_inputChecksCount++;
+		nextInputCheck += inputCheckInterval;
+	}
+}
+
 void handleInput(PlayerButtonCommand& input, PlayerObject* player,
 	PlayLayer* playLayer, double& lastEventTimestamp) {
 	advancePlayerToTimestamp(player, input.m_timestamp, lastEventTimestamp);
@@ -101,58 +155,4 @@ void handleInput(PlayerButtonCommand& input, PlayerObject* player,
 	}
 
 	lastEventTimestamp = input.m_timestamp;
-}
-
-void processInputsUpToTimestamp(double tickTimestamp, PlayerObject* player,
-	PlayLayer* playLayer, bool isPlayer1) {
-	double& lastEventTimestamp =
-		isPlayer1 ? g_p1LastEventTimestamp : g_p2LastEventTimestamp;
-
-	double inputCheckInterval = 1.0 / g_inputHz;
-	double nextInputCheck =
-		g_levelStartTimestamp + g_inputChecksCount * inputCheckInterval;
-
-	// Catch up to current time
-	while (nextInputCheck < lastEventTimestamp) {
-		g_inputChecksCount++;
-		nextInputCheck += inputCheckInterval;
-	}
-
-	int inputIdx = 0;
-
-	while (nextInputCheck <= tickTimestamp) {
-		while (inputIdx < static_cast<int>(g_inputQueue.size())) {
-			auto& input = g_inputQueue[inputIdx];
-
-			bool inputIsP1 = !input.m_isPlayer2;
-			if (inputIsP1 != isPlayer1) {
-				inputIdx++;
-				continue;
-			}
-
-			if (input.m_timestamp >= nextInputCheck) break;
-
-			playLayer->handleButton(
-				input.m_isPush, static_cast<int>(input.m_button), isPlayer1);
-
-			if (!input.m_isPush && player->m_isDashing) {
-				advancePlayerToTimestamp(
-					player, nextInputCheck, lastEventTimestamp);
-				player->stopDashing();
-				lastEventTimestamp = nextInputCheck;
-				inputIdx++;
-				continue;
-			}
-
-			double originalTimestamp = input.m_timestamp;
-			input.m_timestamp = nextInputCheck;
-			handleInput(input, player, playLayer, lastEventTimestamp);
-			input.m_timestamp = originalTimestamp;
-
-			inputIdx++;
-		}
-
-		g_inputChecksCount++;
-		nextInputCheck += inputCheckInterval;
-	}
 }
