@@ -1,50 +1,51 @@
 {
-	"geode": "5.6.1",
+	"geode": "5.7.1",
 	"gd": {
 		"win": "2.2081"
 	},
-
 	"id": "chizz.cbf-plus",
 	"name": "CBF+",
 	"version": "v1.0.0",
 	"developer": "chizz",
 	"description": "Reworks physics for input interpolation.",
 	"tags": [
-        "gameplay",
-        "enhancement",
-        "performance",
+		"gameplay",
+		"enhancement",
+		"performance",
 		"cheat"
-    ],
+	],
 	"links": {
 		"source": "https://github.com/ch-zzzy/GD-CBF-Plus"
 	},
-
+	"dependencies": {
+		"chizz.continuous-physics-api": {
+			"version": ">=v1.0.0",
+			"required": true
+		}
+	},
 	"settings": {
 		"mod-disabled": {
 			"name": "Disable Mod",
 			"type": "bool",
 			"default": false
 		},
-
 		"input-hz": {
 			"name": "Input Refresh Rate (Hz)",
 			"description": "How frequently the game checks for your input. Higher values = more responsive/precise. Set to 240 for vanilla click-on-steps behavior, 480 for CBS equivalent, max to replicate syzzi's CBF.",
 			"type": "float",
 			"default": 240,
-            "min": 60,
-            "max": 10000,
+			"min": 60,
+			"max": 10000,
 			"control": {
 				"slider": false
 			}
-        },
-
+		},
 		"dangerous-settings": {
 			"name": "Dangerous Settings",
 			"description": "These settings change physics from vanilla and are not recommended for general use.",
 			"type": "bool",
 			"default": false
 		},
-
 		"tps": {
 			"name": "Ticks Per Second (TPS)",
 			"description": "How many times per second the physics engine and collision checks update. Set to 240 for vanilla physics.",
@@ -58,7 +59,6 @@
 			"enable-if": "dangerous-settings && !subframes-enabled",
 			"enable-if-description": "You must enable \"Dangerous Settings\" and disable \"Enable 2.1 Subframes\" to use this"
 		},
-
 		"velocity-unrounding": {
 			"name": "Velocity Unrounding",
 			"description": "Implementation of Velocity Unrounding, which prevents the game from rounding y-velocity to 3 decimal places.",
@@ -67,7 +67,6 @@
 			"enable-if": "dangerous-settings",
 			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
 		},
-
 		"subframes-enabled": {
 			"name": "Enable 2.1 Subframes",
 			"description": "Replicates the \"subframe\" physics behavior of Geometry Dash 2.1, where every frame had four ticks. (Disables tps, forces it to be 4x input hz.)",
@@ -77,7 +76,6 @@
 			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
 		}
 	},
-
 	"incompatibilities": {
 		"syzzi.click_between_frames": ">=v1.0.0",
 		"zmx.cbf-lite": ">=v1.0.0",
