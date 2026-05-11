@@ -46,30 +46,9 @@
 			"type": "bool",
 			"default": false
 		},
-		"tps": {
-			"name": "Ticks Per Second (TPS)",
-			"description": "How many times per second the physics engine and collision checks update. Set to 240 for vanilla physics.",
-			"type": "float",
-			"default": 240,
-			"min": 30,
-			"max": 1000,
-			"control": {
-				"slider": false
-			},
-			"enable-if": "dangerous-settings && !subframes-enabled",
-			"enable-if-description": "You must enable \"Dangerous Settings\" and disable \"Enable 2.1 Subframes\" to use this"
-		},
 		"velocity-unrounding": {
 			"name": "Velocity Unrounding",
 			"description": "Implementation of Velocity Unrounding, which prevents the game from rounding y-velocity to 3 decimal places.",
-			"type": "bool",
-			"default": false,
-			"enable-if": "dangerous-settings",
-			"enable-if-description": "You must enable \"Dangerous Settings\" to use this"
-		},
-		"subframes-enabled": {
-			"name": "Enable 2.1 Subframes",
-			"description": "Replicates the \"subframe\" physics behavior of Geometry Dash 2.1, where every frame had four ticks. (Disables tps, forces it to be 4x input hz.)",
 			"type": "bool",
 			"default": false,
 			"enable-if": "dangerous-settings",
